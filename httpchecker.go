@@ -18,7 +18,6 @@ type Result struct {
 	Queries map[string]interface{}
 	Payload map[string]interface{}
 	// Core
-	r *http.Request
 	a parser.API
 	ps map[string]string
 }
@@ -26,17 +25,16 @@ type Result struct {
 // Check and compare request values with API annotation
 func Check(r *http.Request, a parser.API, params map[string]string) (res Result, err error) {
 	res = Result {
-		r: r,
 		a: a,
 		ps: params,
 	}
 
-	if err = res.checkParams(); err != nil {
+	if err = res.checkParams(r); err != nil {
 		res.Status = http.StatusBadRequest
 		return
 	}
 
-	if err = res.checkQueries(); err != nil {
+	if err = res.checkQueries(r); err != nil {
 		res.Status = http.StatusBadRequest
 		return
 	}
@@ -46,7 +44,7 @@ func Check(r *http.Request, a parser.API, params map[string]string) (res Result,
 
 		switch strings.ToLower(ct[0]) {
 		case "application/json":
-			if err = res.checkPayloadJSON(); err != nil {
+			if err = res.checkPayloadJSON(r); err != nil {
 				res.Status = http.StatusBadRequest
 				return
 			}
@@ -60,7 +58,7 @@ func Check(r *http.Request, a parser.API, params map[string]string) (res Result,
 }
 
 // checkParams allows to check request params
-func (r Result) checkParams() (err error) {
+func (r Result) checkParams(req *http.Request) (err error) {
 	var value interface{}
 
 	r.Params = make(map[string]interface{})
@@ -84,15 +82,20 @@ func (r Result) checkParams() (err error) {
 }
 
 // checkQueries allows to check request queries
-func (r Result) checkQueries() (err error) {
+func (r Result) checkQueries(req *http.Request) (err error) {
 	var value interface{}
 
 	list := make(map[string]string)
 	r.Queries = make(map[string]interface{})
 
-	split := strings.Split(r.r.URL.String(), "?")
+	split := strings.Split(req.URL.String(), "?")
 
 	if len(split) < 2 {
+		for _, query := range r.a.Validate.Queries {
+			if !query.Nullable {
+				return fmt.Errorf("%s's query can't be empty", query.Key)
+			}
+		}
 		return
 	}
 
@@ -110,7 +113,7 @@ func (r Result) checkQueries() (err error) {
 		value = nil
 
 		if list[query.Key] == "" && !query.Nullable {
-			return fmt.Errorf("%s's queries can't be empty", query.Key)
+			return fmt.Errorf("%s's query can't be empty", query.Key)
 		}
 
 		if list[query.Key] != "" {
@@ -127,7 +130,7 @@ func (r Result) checkQueries() (err error) {
 }
 
 // checkPayloadJSON allows to check request payload (from JSON)
-func (r Result) checkPayloadJSON() (err error) {
+func (r Result) checkPayloadJSON(req *http.Request) (err error) {
 	var value interface{}
 	var data map[string]interface{}
 
@@ -137,7 +140,7 @@ func (r Result) checkPayloadJSON() (err error) {
 		return
 	}
 
-	err = parseBody(r.r, &data)
+	err = parseBody(req, &data)
 	if err != nil {
 		return err
 	}
